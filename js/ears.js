@@ -239,12 +239,22 @@ function noteAt(an, t, next) {
   const bStart = Math.round((t - 0.025) * sr) - L;
   const before = bStart >= 0 ? specInto(x, bStart, L, new Float32Array(FFTN / 2)) : null;
   const ests = [];
-  for (const off of [0.03, 0.06, 0.095, 0.14]) {
+  for (const off of [0.03, 0.06, 0.095, 0.14, 0.19]) {
     if (ests.length && t + off + span > next + 0.03) break;
     const r = pitchAt(x, sr, Math.round((t + off) * sr), W, maxLag, minLag, before);
     if (r && r.conf > 0.55) ests.push(69 + 12 * Math.log2(r.f / 440));
   }
   if (!ests.length) return null;
+  // A struck string holds its pitch to within a few cents. A speaking voice slides. If the
+  // guesses slide, this strike is (mostly) a voice: look underneath it for a steady pitch.
+  if (ests.length >= 3) {
+    const med = ests.slice().sort((a, b) => a - b)[Math.floor(ests.length / 2)];
+    const dev = ests.map((v) => Math.abs(v - 12 * Math.round((v - med) / 12) - med)).sort((a, b) => a - b);
+    // judge by the guesses that agree best (the first one or two can still be caught in the
+    // last note's ring or the hammer's thump)
+    const keep = dev.slice(0, Math.max(2, Math.ceil(dev.length * 0.6)));
+    if (keep[keep.length - 1] > 0.2) return steadyUnder(an, t, next, before, Math.round(med));
+  }
   // Group the guesses by note name (an octave slip is the same key). The biggest group wins;
   // its guesses must agree closely, because a piano note holds its pitch while speech and
   // noise wander. One early guess caught in the strike's thump doesn't sink the rest.
@@ -259,9 +269,9 @@ function noteAt(an, t, next) {
     if (!g || a.length > g.length || (a.length === g.length && a[0].i < g[0].i)) g = a;
   });
   if (ests.length >= 3 && g.length < 2) return null;
-  if (g.length >= 2) {
-    const ref = g[0].v;
-    const folded = g.map((e) => e.v - 12 * Math.round((e.v - ref) / 12));
+  // (with 3 or more guesses the steadiness check above has already done this job properly)
+  if (ests.length === 2 && g.length === 2) {
+    const folded = g.map((e) => e.v - 12 * Math.round((e.v - g[0].v) / 12));
     if (Math.max(...folded) - Math.min(...folded) > 0.45) return null;
   }
   // the octave most of the group agrees on (ties: the earliest)
@@ -272,6 +282,42 @@ function noteAt(an, t, next) {
   g.forEach((e) => { const k = Math.round(e.v); if (oct[k] > best) { best = oct[k]; m = k; } });
   if (m < 21 || m > 108) return null;
   return { m, votes: g.length, of: ests.length };
+}
+
+/* When the sound at a strike slides (a voice counting along), find the pitch that stays put
+   underneath it: strong right after the strike AND still there a moment later, at the same
+   pitch. A sliding voice smears across pitches; a piano string doesn't. */
+function steadyUnder(an, t, next, before, voiceM) {
+  const { x, sr, W, maxLag } = an;
+  const L = Math.min(FFTN, W + maxLag);
+  const binHz = sr / FFTN;
+  const tA = t + 0.04;
+  const tB = Math.min(t + 0.2, next - L / sr - 0.01);
+  if (tB - tA < 0.1) return null;
+  const sA = specInto(x, Math.round(tA * sr), L, new Float32Array(FFTN / 2));
+  const sB = specInto(x, Math.round(tB * sr), L, new Float32Array(FFTN / 2));
+  if (before) for (let k = 0; k < sA.length; k++) { sA[k] = Math.max(0, sA[k] - before[k]); sB[k] = Math.max(0, sB[k] - before[k] * 0.8); }
+  let best = null;
+  let top = 0;
+  // the sliding voice itself (and its octaves) can't be the answer
+  const isVoice = (m) => voiceM != null && Math.abs(m - voiceM - 12 * Math.round((m - voiceM) / 12)) <= 1;
+  for (let m = 36; m <= 96; m++) {
+    const a = salienceC(binHz, hz(m), sA);
+    const b = salienceC(binHz, hz(m), sB);
+    top = Math.max(top, a);
+    if (isVoice(m)) continue;
+    const s = Math.min(a, b * 1.4);
+    if (!best || s > best.s) best = { m, s };
+  }
+  if (!best || best.s < 0.45 * top) return null;
+  // prefer the lowest octave that explains it (its upper octave shares its harmonics)
+  const lower = best.m - 12;
+  if (lower >= 36) {
+    const a = salienceC(binHz, hz(lower), sA);
+    const b = salienceC(binHz, hz(lower), sB);
+    if (!isVoice(lower) && Math.min(a, b * 1.4) > 0.8 * best.s) best.m = lower;
+  }
+  return { m: best.m, votes: 0, of: 0, steady: true };
 }
 
 /* Listens to a whole recording. Returns the notes with their times, plus what a lesson needs
@@ -425,4 +471,25 @@ export function countStrikes(raw, rawSr, floorDb) {
   const on = pickOnsets(tr, sr, { floorDb });
   return on.quiet ? [] : on.times;
 }
-export const _dbg = { pickOnsets, noteAt, fluxTrack, pitchAt, specInto, FFTN };
+export const _dbg = { pickOnsets, noteAt, fluxTrack, pitchAt, specInto, FFTN, salienceC };
+
+/* Does note m keep sounding after a strike at time t, the way a held key does? Returns how much
+   of it is left 0.3 s later (1 = all of it, near 0 = gone), or null if the next strike comes
+   too soon to tell. A spoken word is over by then; a piano key is still ringing. */
+export function holds(an, t, m, nextT) {
+  const { x, sr, W, maxLag } = an;
+  const L = Math.min(FFTN, W + maxLag);
+  const binHz = sr / FFTN;
+  // look as late as possible before the next strike, but at least a quarter second after
+  const late = Math.min(t + 0.3, (nextT == null ? Infinity : nextT) - L / sr - 0.01);
+  if (late < t + 0.24) return null;
+  const a0 = Math.round((t + 0.05) * sr);
+  const a1 = Math.round(late * sr);
+  if (a1 + L >= x.length) return null;
+  const sa = specInto(x, a0, L, new Float32Array(FFTN / 2));
+  const sb = specInto(x, a1, L, new Float32Array(FFTN / 2));
+  const f = hz(m);
+  const ea = Math.max(salienceC(binHz, f, sa), 1e-9);
+  const eb = salienceC(binHz, f, sb);
+  return eb / ea;
+}

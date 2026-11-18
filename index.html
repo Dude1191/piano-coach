@@ -29,6 +29,7 @@
   p { margin: 6px 0; }
   .muted { color: var(--muted); }
   .small { font-size: 14px; }
+  .tiny { font-size: 12px; }
   .center { text-align: center; }
   .top { display: flex; justify-content: space-between; align-items: flex-start; padding: 14px 4px 10px; }
   .top p { margin: 2px 0 0; }
@@ -73,6 +74,12 @@
   .kmid { fill: var(--accent); }
   .count { font-size: 88px; font-weight: 800; text-align: center; line-height: 1; margin: 18px 0 6px; font-variant-numeric: tabular-nums; }
   .go { font-size: 42px; font-weight: 800; text-align: center; color: var(--ok); margin: 8px 0; }
+  .pulse { display: flex; flex-direction: column; align-items: center; gap: 4px; margin: 6px 0; }
+  .pulse b { width: 86px; height: 86px; border-radius: 50%; display: grid; place-items: center; font-size: 44px; font-weight: 800;
+    background: var(--card2); color: var(--ink); transition: transform 0.08s, background 0.2s; }
+  .pulse b.one { background: #1f3d29; color: #7dfc9c; }
+  .pulse b.hit { animation: hit 0.28s ease-out; }
+  @keyframes hit { 0% { transform: scale(1.18); } 100% { transform: scale(1); } }
   .dots { display: flex; justify-content: center; align-items: center; gap: 8px; margin: 10px 0; flex-wrap: wrap; }
   .dots i { width: 16px; height: 16px; border-radius: 50%; background: var(--meh); transition: background 0.15s; }
   .dots i.on { background: var(--ok); }
@@ -84,6 +91,7 @@
   .result { border-radius: 16px; padding: 14px; margin-top: 12px; background: var(--card2); }
   .result.good { box-shadow: 0 0 0 2px var(--ok) inset; }
   .result.fix { box-shadow: 0 0 0 2px var(--bad) inset; }
+  .result.ask { box-shadow: 0 0 0 2px var(--accent) inset; }
   .verdict { font-size: 18px; font-weight: 600; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
   .chip { min-width: 34px; text-align: center; padding: 6px 8px; border-radius: 10px; font-weight: 700; font-size: 15px; background: var(--meh); }
@@ -119,6 +127,6 @@
 <body>
 <div id="app"><p class="muted center" style="padding-top:40vh">Loading…</p></div>
 <noscript><p>Piano Coach needs JavaScript turned on.</p></noscript>
-<script type="module" src="js/app.js?v=0.1"></script>
+<script type="module" src="js/app.js?v=0.2"></script>
 </body>
 </html>

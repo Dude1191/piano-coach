@@ -1,14 +1,14 @@
 /* Piano Coach: the screens and the teaching loop.
    why (one sentence) → watch (demo from your seat) → your turn → check by ear →
    one fix → 3 clean in a row → a cold check the next day. */
-import { Mic, unlock, audioCtx, listMics } from './mic.js';
-import { hearNotes, countStrikes, letter, noteName, toWav } from './ears.js';
-import { gradeSeq, gradeHunt } from './grade.js';
-import { playSteps, playNote, tick } from './synth.js';
-import { keyboard } from './keys.js';
-import { LESSON1, HEARING } from './lessons.js';
+import { Mic, unlock, audioCtx, listMics } from './mic.js?v=0.2';
+import { hearNotes, countStrikes, letter, noteName, toWav } from './ears.js?v=0.2';
+import { gradeSeq, gradeHunt } from './grade.js?v=0.2';
+import { playSteps, playNote, tick } from './synth.js?v=0.2';
+import { keyboard } from './keys.js?v=0.2';
+import { LESSON1, HEARING } from './lessons.js?v=0.2';
 
-const VERSION = '0.1';
+const VERSION = '0.2';
 const app = document.getElementById('app');
 const mic = new Mic();
 const $ = (s, r) => (r || document).querySelector(s);
@@ -145,10 +145,14 @@ async function runTake(stage, opt, alive) {
   if (!alive()) { mic.close(); return null; }
   if (mic.label && S.micLabel !== mic.label) { S.micLabel = mic.label; save(); }
   const sr = mic.sr;
+  const micLine = mic.headset
+    ? '<p class="warn small center">I’m stuck on your headphone mic, and it can’t hear the piano well. Take the headphones out for this one.</p>'
+    : '<p class="muted center tiny">Mic: ' + esc(mic.label) + '</p>';
   mic.startTake();
-  stage.innerHTML = '<div class="count" id="cnt">3</div><p class="muted center small">Hand in place. Eyes on your first key.</p>';
+  stage.innerHTML = '<div class="count" id="cnt">3</div><p class="muted center small">Hand in place. Eyes on your first key.</p>' + micLine;
   const cnt = $('#cnt', stage);
   let duetEnd = null;
+  const bpm = opt.bpm || (opt.duet ? opt.duet.bpm : 60);
   if (opt.duet) {
     const beat = 60 / opt.duet.bpm;
     const c = audioCtx();
@@ -158,12 +162,34 @@ async function runTake(stage, opt, alive) {
     duetEnd = performance.now() + (0.25 + (3 + opt.expect + 1) * beat) * 1000;
     for (let k = 3; k >= 1; k--) { cnt.textContent = k; await wait(beat * 1000); if (!alive()) { mic.close(); return null; } }
   } else {
-    for (let k = 3; k >= 1; k--) { cnt.textContent = k; await wait(650); if (!alive()) { mic.close(); return null; } }
+    // count in at the take's beat: three clicks you can hear, numbers you can see
+    const beat = 60 / bpm;
+    const c = audioCtx();
+    const t0 = c.currentTime + 0.15;
+    for (let k = 0; k < 3; k++) tick(t0 + k * beat, k === 0);
+    await wait(150);
+    for (let k = 3; k >= 1; k--) { cnt.textContent = k; await wait(beat * 1000); if (!alive()) { mic.close(); return null; } }
   }
   const floorDb = mic.floorDb();
   const goSec = mic.takeLen / sr;
+  const goAt = performance.now();
   const dots = Array.from({ length: opt.expect }, () => '<i></i>').join('');
-  stage.innerHTML = '<div class="go">Go</div><div class="dots" id="dots">' + dots + '<b id="more"></b></div><div class="meter"><i id="lvl"></i></div><button class="btn ghost" id="done">I’m done</button>';
+  stage.innerHTML = '<div class="pulse" id="pulse"><b>1</b><span class="muted small">Count in your head. One note per beat.</span></div>' +
+    '<div class="dots" id="dots">' + dots + '<b id="more"></b></div><div class="meter"><i id="lvl"></i></div><button class="btn ghost" id="done">I’m done</button>' + micLine;
+  // the beat on screen, 1-2-3 like a waltz, so you never have to count out loud
+  const pulse = $('#pulse b', stage);
+  const beatMs = 60000 / bpm;
+  let lastBeat = -1;
+  const beatTimer = setInterval(() => {
+    if (!pulse.isConnected) { clearInterval(beatTimer); return; }
+    const k = Math.floor((performance.now() - goAt) / beatMs);
+    if (k === lastBeat) return;
+    lastBeat = k;
+    pulse.textContent = String((k % 3) + 1);
+    pulse.className = k % 3 === 0 ? 'one' : '';
+    void pulse.offsetWidth;
+    pulse.classList.add('hit');
+  }, 30);
   let stop = false;
   on('done', () => { stop = true; });
   const strikes = [];
@@ -180,7 +206,7 @@ async function runTake(stage, opt, alive) {
     const off = (x.length - tail.length) / sr;
     countStrikes(tail, sr, floorDb).forEach((t) => {
       const at = t + off;
-      if (at > secs - 0.08) return;
+      if (at > secs - 0.08 || at < goSec - 0.3) return; // count-in clicks aren't notes
       if (!strikes.some((s) => Math.abs(s - at) < 0.1)) strikes.push(at);
     });
     strikes.sort((a, b) => a - b);
@@ -198,6 +224,7 @@ async function runTake(stage, opt, alive) {
     if (!strikes.length && secs - goSec > 12) break;
     if (secs - goSec > opt.expect * 2.2 + 8) break;
   }
+  clearInterval(beatTimer);
   if (!alive()) { mic.close(); return null; }
   const take = mic.stopTake();
   mic.close();
@@ -277,7 +304,7 @@ SCREENS.test = function (arg, alive) {
     const res = $('#res');
     acts.hidden = true;
     res.innerHTML = '';
-    const r = await runTake($('#stage'), { expect: c.E.length, duet: c.duet ? { bpm: 60, note: 48 } : null }, alive);
+    const r = await runTake($('#stage'), { expect: c.E.length, bpm: 60, duet: c.duet ? { bpm: 60, note: 48 } : null }, alive);
     if (!alive()) return;
     if (!r) { acts.hidden = false; return; }
     const g = gradeSeq(r.an, c.E, c.fingers);
@@ -285,12 +312,14 @@ SCREENS.test = function (arg, alive) {
     let verdict;
     if (c.wantMiss) verdict = g.status === 'miss' ? 'Caught it. ' + g.text : (g.clean ? 'I didn’t catch a mistake in that one. If you really hit a wrong key, that’s a fail for me, not you.' : g.text);
     else verdict = g.clean ? 'Passed: I heard every note.' : g.text;
-    const rec = { pass, status: g.status, text: verdict, heard: fullNames(r.an.notes), at: new Date().toISOString() };
+    if (c.duet && mic.label) verdict += ' Mic: ' + mic.label + (mic.headset ? ' (your headphone mic, which can’t hear the piano well).' : '.');
+    const rec = { pass, status: g.status, text: verdict, heard: fullNames(r.an.notes), at: new Date().toISOString(), mic: S.micLabel };
     if (g.note) rec.note = g.note;
     S.hearing[c.id] = rec;
     save();
     logIt({ k: 'hearing', id: c.id, pass, status: g.status, heard: rec.heard });
-    const heardLine = '<p class="muted small">What I heard: ' + esc(names(r.an.notes) || 'nothing') + '</p>';
+    // the raw list can include stray sounds the grading already threw out, so only show it when it helps
+    const heardLine = (!pass || c.wantMiss) ? '<p class="muted small">What I heard: ' + esc(names(r.an.notes) || 'nothing') + '</p>' : '';
     res.innerHTML = '<div class="result ' + (pass ? 'good' : 'fix') + '"><div class="chips">' + chipsFor(g) + '</div><p class="verdict">' + esc(verdict) + '</p>' + (g.note ? '<p class="muted small">' + esc(g.note) + '</p>' : '') + heardLine + '</div>';
     say(pass ? (c.wantMiss ? 'Caught it.' : 'Passed.') : verdict, alive);
     const nextBtns = '<div class="actions"><button class="btn ghost" id="again">Try again</button><button class="btn primary" id="next">' + (i + 1 < HEARING.length ? 'Next check' : 'See results') + '</button></div>' +
@@ -360,6 +389,22 @@ SCREENS.testDone = function (arg, alive) {
 };
 
 /* ---------- Lesson 1 ---------- */
+/* What to ask when a take didn't come out clean: what it heard, as a question, so you make the call. */
+function askLine(g, ch) {
+  const f = g.first || {};
+  const prev = f.j > 0 && g.E ? letter(g.E[f.j - 1]) : null;
+  if (g.kind === 'hunt') {
+    if (g.status === 'unfinished') return 'I only caught ' + (g.hits || 0) + ' of your ' + letter(g.p) + '’s. Did you play all ' + g.n + '?';
+    if (f.got != null) return 'I heard ' + letter(f.got) + ' in there. Did you hit a key that wasn’t ' + letter(g.p) + '?';
+    return 'I couldn’t tell for sure. Was that clean?';
+  }
+  if (f.kind === 'sub') return 'I heard ' + letter(f.got) + ' where ' + letter(f.want) + ' goes. Did you miss that one?';
+  if (f.kind === 'skip') return 'I didn’t catch ' + letter(f.want) + (prev ? ' after ' + prev : '') + '. Did you play it?';
+  if (f.kind === 'extra') return 'I heard an extra ' + letter(f.got) + (f.j > 0 && g.E ? ' after ' + letter(g.E[f.j - 1]) : '') + '. Did you hit an extra key?';
+  if (g.status === 'unfinished') return 'It sounded like you stopped after ' + (prev || 'a few notes') + '. Did you play it all the way through?';
+  if (g.status === 'few') return 'I only caught a few notes. Was that clean?';
+  return 'I couldn’t tell for sure. Was that clean?';
+}
 function chunkState(id) {
   if (!S.chunks[id]) S.chunks[id] = { streak: 0, tries: 0, misses: {}, guide: false };
   return S.chunks[id];
@@ -447,78 +492,89 @@ function chunkScreen(i, alive) {
     acts.hidden = true;
     res.innerHTML = '';
     if (st.guide) guide(ch, kb); else kb.clear();
-    const r = await runTake(stage, { expect: ch.kind === 'hunt' ? ch.n : ch.E.length }, alive);
+    const r = await runTake(stage, { expect: ch.kind === 'hunt' ? ch.n : ch.E.length, bpm: ch.bpm }, alive);
     if (!alive()) return;
     if (!r) { acts.hidden = false; return; }
     const g = ch.kind === 'hunt' ? gradeHunt(r.an, ch.p, ch.n) : gradeSeq(r.an, ch.E, ch.fingers);
     if (window.__pcLast && g.marks) window.__pcLast.marks = g.marks.map((mk) => noteName(mk.want) + (mk.ok ? '+' : '-') + mk.how + (mk.ev != null ? mk.ev : '')).join(' ');
     st.tries = (st.tries || 0) + 1;
-    let spot = 'x';
-    if (g.clean) {
-      st.streak = (st.streak || 0) + 1;
-      st.misses = {};
-      if (st.guide) st.guide = false;
-    } else {
-      st.streak = 0;
-      spot = g.first && g.first.j != null ? String(g.first.j) : (g.status || 'x');
-      st.misses[spot] = (st.misses[spot] || 0) + 1;
-    }
-    save();
     logIt({ k: 'take', chunk: ch.id, status: g.status, heard: fullNames(r.an.notes) });
-    $('#streak').innerHTML = streakDots(st.streak);
-    if (g.clean && st.streak >= 3) { lockIn(); return; }
-    if (g.clean) {
-      res.innerHTML = resultBox(g);
-      say('Clean. ' + st.streak + ' of 3.', alive);
-      res.insertAdjacentHTML('beforeend', '<div class="actions"><button class="btn primary big" id="again">Again</button></div>');
+    if (g.clean) { countClean(); return; }
+    if (g.status === 'nothing') {
+      // nothing heard is a mic problem, not a playing problem: don't ask, don't count it
+      res.innerHTML = resultBox(g) + '<div class="actions"><button class="btn primary big" id="again">Try again</button></div>';
+      say(g.text, alive);
       on('again', () => lock(() => takeTurn()));
       return;
     }
-    const n = st.misses[spot];
-    // show the fix on the keys: the right key in your hand's colour, the one you hit in red
-    if (g.first && g.first.want != null && ch.kind !== 'hunt') {
-      kb.clear();
-      const j0 = g.first.j;
-      if (g.first.kind === 'sub' && g.first.got != null) {
-        const got = kb.has(g.first.got) ? g.first.got : g.first.got - 12 * Math.round((g.first.got - g.first.want) / 12);
-        if (kb.has(got) && got !== g.first.want) kb.light(got, 'bad', '✕');
-      }
-      kb.light(g.first.want, ch.hand === 'L' ? 'lh' : 'rh', ch.fingers && j0 != null ? ch.fingers[j0] : '');
-    }
-    let extra = '';
-    if (n >= 3 && !st.guide) { st.guide = true; save(); extra = '<p class="muted small">New way: this time the keys stay lit while you play.</p>'; }
-    res.innerHTML = resultBox(g, extra) +
-      '<div class="actions"><button class="btn ghost" id="spot">Show me that spot</button><button class="btn primary big" id="again">Try again</button></div>' +
-      '<div class="row center"><button class="link" id="right">I played it right</button><button class="link" id="send">Send this take to Claude</button></div>';
-    on('again', () => lock(() => takeTurn()));
-    on('send', shareTake);
-    on('right', () => {
+    // Ask, don't accuse: show what was heard and let you make the call.
+    res.innerHTML = '<div class="result ask"><div class="chips">' + chipsFor(g) + '</div><p class="verdict">' + esc(askLine(g, ch)) + '</p>' +
+      '<div class="actions"><button class="btn ghost" id="aMiss">I missed it</button><button class="btn primary" id="aClean">It was clean</button></div>' +
+      '<p class="muted tiny center">Be honest. It only helps if you are.</p></div>';
+    say(askLine(g, ch), alive);
+    on('aClean', () => {
+      logIt({ k: 'override', chunk: ch.id, heard: fullNames(r.an.notes), said: g.text });
+      toast('Counted. That take helps me tune my ears to your piano.');
+      countClean();
+    });
+    on('aMiss', () => { hush(); showFix(); });
+
+    function countClean() {
       st.streak = (st.streak || 0) + 1;
       st.misses = {};
+      if (st.guide) st.guide = false;
       save();
-      logIt({ k: 'override', chunk: ch.id, heard: fullNames(r.an.notes), said: g.text });
       $('#streak').innerHTML = streakDots(st.streak);
       if (st.streak >= 3) { lockIn(); return; }
-      res.innerHTML = '<div class="result good"><p class="verdict">Got it, counted as clean. Thanks for telling me.</p></div><div class="actions"><button class="btn primary big" id="again">Again</button></div>';
-      toast('Logged so Claude can fix my ears.');
+      kb.clear();
+      res.innerHTML = '<div class="result good"><div class="chips">' + (g.clean ? chipsFor(g) : '') + '</div><p class="verdict">Clean. ' + st.streak + ' of 3.</p></div>' +
+        '<div class="actions"><button class="btn primary big" id="again">Again</button></div>';
+      say('Clean. ' + st.streak + ' of 3.', alive);
       on('again', () => lock(() => takeTurn()));
-    });
-    const j = g.first && g.first.j != null ? g.first.j : null;
-    const spotDemo = async () => {
-      if (j == null || ch.kind === 'hunt') await demo(ch, kb, alive);
-      else {
-        const len = ch.E.length;
-        await demo(ch, kb, alive, Math.max(0, j - 2), Math.min(len, j + 2));
-        if (!alive()) return;
-        await wait(400);
-        await demo(ch, kb, alive);
+    }
+    function showFix() {
+      st.streak = 0;
+      const spot = g.first && g.first.j != null ? String(g.first.j) : (g.status || 'x');
+      st.misses[spot] = (st.misses[spot] || 0) + 1;
+      save();
+      $('#streak').innerHTML = streakDots(st.streak);
+      const n = st.misses[spot];
+      // show the fix on the keys: the right key in your hand's colour, the one you hit in red
+      if (g.first && g.first.want != null && ch.kind !== 'hunt') {
+        kb.clear();
+        const j0 = g.first.j;
+        if (g.first.kind === 'sub' && g.first.got != null) {
+          const got = kb.has(g.first.got) ? g.first.got : g.first.got - 12 * Math.round((g.first.got - g.first.want) / 12);
+          if (kb.has(got) && got !== g.first.want) kb.light(got, 'bad', '✕');
+        }
+        kb.light(g.first.want, ch.hand === 'L' ? 'lh' : 'rh', ch.fingers && j0 != null ? ch.fingers[j0] : '');
       }
-      if (alive() && st.guide) guide(ch, kb);
-    };
-    on('spot', () => lock(spotDemo));
-    await say(g.text, alive);
-    if (!alive()) return;
-    if (n === 2) await lock(spotDemo); // a second miss at the same spot gets a fresh demo, not more talk
+      let extra = '';
+      if (n >= 3 && !st.guide) { st.guide = true; save(); extra = '<p class="muted small">New way: this time the keys stay lit while you play.</p>'; }
+      res.innerHTML = resultBox(g, extra) +
+        '<div class="actions"><button class="btn ghost" id="spot">Show me that spot</button><button class="btn primary big" id="again">Try again</button></div>' +
+        '<div class="row center"><button class="link" id="send">Send this take to Claude</button></div>';
+      on('again', () => lock(() => takeTurn()));
+      on('send', shareTake);
+      const j = g.first && g.first.j != null ? g.first.j : null;
+      const spotDemo = async () => {
+        if (j == null || ch.kind === 'hunt') await demo(ch, kb, alive);
+        else {
+          const len = ch.E.length;
+          await demo(ch, kb, alive, Math.max(0, j - 2), Math.min(len, j + 2));
+          if (!alive()) return;
+          await wait(400);
+          await demo(ch, kb, alive);
+        }
+        if (alive() && st.guide) guide(ch, kb);
+      };
+      on('spot', () => lock(spotDemo));
+      (async () => {
+        await say(g.text, alive);
+        if (!alive()) return;
+        if (n === 2) await lock(spotDemo); // a second miss at the same spot gets a fresh demo, not more talk
+      })();
+    }
   }
   function lockIn() {
     st.lockedOn = todayStr();
@@ -566,18 +622,32 @@ SCREENS.cold = function (arg, alive) {
   on('go', async () => {
     unlock();
     $('#acts').hidden = true;
-    const r = await runTake($('#stage'), { expect: ch.kind === 'hunt' ? ch.n : ch.E.length }, alive);
+    const r = await runTake($('#stage'), { expect: ch.kind === 'hunt' ? ch.n : ch.E.length, bpm: ch.bpm }, alive);
     if (!alive()) return;
     if (!r) { $('#acts').hidden = false; return; }
     const g = ch.kind === 'hunt' ? gradeHunt(r.an, ch.p, ch.n) : gradeSeq(r.an, ch.E, ch.fingers);
-    st.coldOn = todayStr();
-    if (g.clean) { st.learned = true; } else { st.lockedOn = null; st.streak = 0; }
-    save();
     logIt({ k: 'cold', chunk: ch.id, status: g.status, heard: fullNames(r.an.notes) });
-    $('#res').innerHTML = resultBox(g, '<p class="muted small">' + (g.clean ? 'It stuck. That one’s yours.' : 'Didn’t stick yet, and that’s normal. It’s back on today’s list.') + '</p>') +
-      '<div class="actions"><button class="btn primary big" id="nx">' + (coldDue().length ? 'Next' : 'Done') + '</button></div>';
-    say(g.clean ? 'It stuck.' : 'Not yet. It goes back on the list.', alive);
-    on('nx', () => go(coldDue().length ? 'cold' : 'home'));
+    const finish = (clean, howHeard) => {
+      st.coldOn = todayStr();
+      if (clean) { st.learned = true; } else { st.lockedOn = null; st.streak = 0; }
+      save();
+      $('#res').innerHTML = '<div class="result ' + (clean ? 'good' : 'fix') + '"><div class="chips">' + chipsFor(g) + '</div><p class="verdict">' + (clean ? 'It stuck. That one’s yours.' : 'Didn’t stick yet, and that’s normal. It’s back on today’s list.') + '</p>' + (howHeard || '') + '</div>' +
+        '<div class="actions"><button class="btn primary big" id="nx">' + (coldDue().length ? 'Next' : 'Done') + '</button></div>';
+      say(clean ? 'It stuck.' : 'Not yet. It goes back on the list.', alive);
+      on('nx', () => go(coldDue().length ? 'cold' : 'home'));
+    };
+    if (g.clean) { finish(true); return; }
+    if (g.status === 'nothing') {
+      $('#res').innerHTML = resultBox(g) + '<div class="actions"><button class="btn primary big" id="again2">Try again</button></div>';
+      on('again2', () => go('cold'));
+      return;
+    }
+    $('#res').innerHTML = '<div class="result ask"><div class="chips">' + chipsFor(g) + '</div><p class="verdict">' + esc(askLine(g, ch)) + '</p>' +
+      '<div class="actions"><button class="btn ghost" id="aMiss">I missed it</button><button class="btn primary" id="aClean">It was clean</button></div>' +
+      '<p class="muted tiny center">Be honest. It only helps if you are.</p></div>';
+    say(askLine(g, ch), alive);
+    on('aClean', () => { logIt({ k: 'override', chunk: ch.id, cold: true, heard: fullNames(r.an.notes), said: g.text }); finish(true); });
+    on('aMiss', () => finish(false));
   });
 };
 
@@ -624,7 +694,7 @@ SCREENS.listen = function (arg, alive) {
 SCREENS.settings = function (arg, alive) {
   app.innerHTML = bar('Settings', 'home') +
     '<section class="card"><div class="row between"><div><h3>Coach’s voice</h3><p class="muted small">Reads the why and the fixes out loud.</p></div><button class="btn ghost" id="voice">' + (S.voice ? 'On' : 'Off') + '</button></div></section>' +
-    '<section class="card"><h3>Microphone</h3><p class="muted small">Last used: ' + esc(S.micLabel || 'not yet') + '</p><select id="mics"><option value="">Phone’s own mic (default)</option></select><button class="link" id="loadMics">Show all mics</button></section>' +
+    '<section class="card"><h3>Microphone</h3><p class="muted small">Last used: ' + esc(S.micLabel || 'not yet') + '</p><select id="mics"><option value="">Automatic: the iPhone’s own mic</option></select><button class="link" id="loadMics">Show all mics</button></section>' +
     '<section class="card"><h3>Speaker check</h3><div class="actions"><button class="btn ghost" id="spk">Play a chord</button></div></section>' +
     '<section class="card"><h3>For Claude</h3><div class="actions"><button class="btn ghost" id="copyLog">Copy my progress</button><button class="btn ghost" id="send">Send my last take</button></div></section>' +
     '<section class="card"><h3>Start over</h3><button class="btn ghost danger" id="reset">Reset all progress</button></section>' +
@@ -634,7 +704,7 @@ SCREENS.settings = function (arg, alive) {
   const sel = $('#mics');
   const fill = async () => {
     const ms = await listMics();
-    sel.innerHTML = '<option value="">Phone’s own mic (default)</option>' + ms.filter((m) => m.deviceId && m.deviceId !== 'default').map((m) => '<option value="' + esc(m.deviceId) + '">' + esc(m.label || 'Mic') + '</option>').join('');
+    sel.innerHTML = '<option value="">Automatic: the iPhone’s own mic</option>' + ms.filter((m) => m.deviceId && m.deviceId !== 'default').map((m) => '<option value="' + esc(m.deviceId) + '">' + esc(m.label || 'Mic') + '</option>').join('');
     sel.value = S.micId || '';
   };
   fill();

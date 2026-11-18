@@ -35,25 +35,25 @@ export const LESSON1 = {
       demo: [[48], [60], [72]], labels: ['C', 'C', 'C'], cls: 'mapc'
     },
     {
-      id: 'rh', title: 'Right hand home', kind: 'seq', hand: 'R', kb: [55, 74], bpm: 80,
+      id: 'rh', title: 'Right hand home', kind: 'seq', hand: 'R', kb: [55, 74], bpm: 66,
       why: 'Thumb on middle C, one finger per key. Once each finger owns a key, your eyes can stop hunting and your ears take over.',
       task: 'Right thumb on middle C. Play up to G and back down, one finger per key.',
       E: RH, fingers: F_R
     },
     {
-      id: 'lh', title: 'Left hand home', kind: 'seq', hand: 'L', kb: [43, 62], bpm: 80,
+      id: 'lh', title: 'Left hand home', kind: 'seq', hand: 'L', kb: [43, 62], bpm: 66,
       why: 'Your left hand plays the low part in both your songs, and its fingers count the other way: the pinky is 5.',
       task: 'Left pinky on the C below middle C. Play up to G and back down.',
       E: LH, fingers: F_L
     },
     {
-      id: 'g', title: 'Move it to G', kind: 'seq', hand: 'R', kb: [60, 79], bpm: 80,
+      id: 'g', title: 'Move it to G', kind: 'seq', hand: 'R', kb: [60, 79], bpm: 66,
       why: 'Your songs make your hand jump to new spots. Moving the whole hand as one block, same shape, is how you land clean.',
       task: 'Move your right thumb to the G above middle C. Same shape: up to D and back.',
       E: RHG, fingers: F_R
     },
     {
-      id: 'both', title: 'Both hands, same notes', kind: 'seq', hand: 'B', kb: [45, 72], bpm: 72,
+      id: 'both', title: 'Both hands, same notes', kind: 'seq', hand: 'B', kb: [45, 72], bpm: 60,
       why: 'Both hands doing the same thing is the first step to both hands doing different things, and that’s exactly where your hands get stuck now.',
       task: 'Both hands at home: left pinky on the low C, right thumb on middle C. Play up and back together.',
       E: RH, fingers: F_R, left: LH, leftFingers: F_L
@@ -75,15 +75,15 @@ export const HEARING = [
     E: RH, fingers: F_R
   },
   {
-    id: 'h3', title: 'Counting out loud',
-    why: 'Counting out loud is how you’ll lock in the waltz beat, so I have to hear the piano through your voice.',
-    task: 'Same thing again, and count out loud the whole time: “1, 2, 3, 1, 2, 3…”',
+    id: 'h3', title: 'Count with me',
+    why: 'While I’m listening, I do the counting: watch the 1, 2, 3 and count it in your head. That’s the waltz beat both your songs are built on.',
+    task: 'Same thing: one note on every beat, counting in your head with the 1, 2, 3 on screen. If a count slips out loud, I should ignore it now.',
     E: RH, fingers: F_R
   },
   {
     id: 'h4', title: 'Headphones', duet: true,
-    why: 'Later I’ll play your other hand while you play yours. That only works if your headphones sound clean and on time.',
-    task: 'Put on headphones or one earbud. I’ll play a low C on every beat. Play the same C D E F G and back, one note per beat.',
+    why: 'Later I’ll play your other hand while you play yours. That only works if your headphones sound clean and I still listen through the phone’s own mic.',
+    task: 'Put on headphones or one earbud. I’ll play a low C on every beat. Play the same C D E F G and back, one note per beat. Check the line under the beat: it should say the iPhone’s mic, not your headphones.',
     E: RH, fingers: F_R
   }
 ];

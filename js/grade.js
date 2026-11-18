@@ -2,7 +2,7 @@
    Rule one: quick to confirm, slow to accuse. A phone hears right notes far more reliably than
    it catches wrong ones, so before calling a note wrong it double-checks the audio for the note
    that was expected, and before calling a note skipped it searches the gap for it. */
-import { pc, letter, evidence, searchGap } from './ears.js';
+import { pc, letter, evidence, searchGap, holds } from './ears.js?v=0.2';
 
 const ACCEPT = 0.6; // the expected note at least this clearly struck where another was heard: count it
 const REACH = 8; // a stray sound more than this many keys outside the exercise isn't held against him
@@ -92,8 +92,13 @@ export function gradeSeq(an, E, fingers) {
     if (o.t === 'm') Object.assign(out.marks[o.j], { got: H[o.i].m, t: H[o.i].t, ok: true, how: 'heard' });
     else if (o.t === 's') Object.assign(out.marks[o.j], { got: H[o.i].m, t: H[o.i].t, ok: false, how: 'sub' });
     else if (o.t === 'x') {
-      if (outside(H[o.i])) out.voice++;
-      else if (!(o.i > 0 && pc(H[o.i].m) === pc(H[o.i - 1].m))) out.extras.push({ after: o.j - 1, got: H[o.i].m, t: H[o.i].t });
+      const h = H[o.i];
+      if (outside(h)) { out.voice++; return; }
+      if (o.i > 0 && pc(h.m) === pc(H[o.i - 1].m)) return;
+      // a "note" that's gone 0.3 s later was a word, not a key you held
+      const left = holds(an, h.t, h.m, o.i + 1 < H.length ? H[o.i + 1].t : null);
+      if (left != null && left < 0.3) { out.voice++; return; }
+      out.extras.push({ after: o.j - 1, got: h.m, t: h.t });
     }
   });
   // slow to accuse, part 1: a "wrong" note where the expected one is clearly sounding counts

@@ -1,5 +1,5 @@
 /* Piano Coach's demo piano: a simple built-in piano sound, so demos work offline and instantly. */
-import { audioCtx } from './mic.js';
+import { audioCtx } from './mic.js?v=0.2';
 
 let master = null;
 let noise = null;
@@ -72,21 +72,23 @@ export function playNote(m, when, dur, vel) {
   setTimeout(() => { try { bus.disconnect(); } catch (e) { /* done */ } }, (t0 - c.currentTime + dur + 1) * 1000);
 }
 
-/* A soft woodblock tick for count-ins. */
+/* A soft click for count-ins. It's a burst of noise with no pitch, so the mic can't mistake
+   it for a note. */
 export function tick(when, accent) {
   const c = audioCtx();
   const dest = out();
-  const o = c.createOscillator();
-  o.type = 'triangle';
-  o.frequency.value = accent ? 1760 : 1320;
+  const h = c.createBufferSource();
+  h.buffer = noise;
+  const bp = c.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.value = accent ? 2600 : 1900;
+  bp.Q.value = 0.7;
   const g = c.createGain();
-  g.gain.setValueAtTime(0, when);
-  g.gain.linearRampToValueAtTime(accent ? 0.35 : 0.22, when + 0.002);
-  g.gain.setTargetAtTime(0, when + 0.003, 0.025);
-  o.connect(g);
+  g.gain.value = accent ? 1.6 : 1.1;
+  h.connect(bp);
+  bp.connect(g);
   g.connect(dest);
-  o.start(when);
-  o.stop(when + 0.2);
+  h.start(when);
 }
 
 /* Plays a list of steps ({n: [midi...], beats}) at `bpm`, starting a little from now.

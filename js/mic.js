@@ -45,18 +45,35 @@ export class Mic {
     if (this.on) return;
     const c = audioCtx();
     session('play-and-record');
-    const audio = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 };
-    if (deviceId) audio.deviceId = { exact: deviceId };
+    const base = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 };
+    const get = async (id) => {
+      const audio = Object.assign({}, base);
+      if (id) audio.deviceId = { exact: id };
+      try {
+        return await navigator.mediaDevices.getUserMedia({ audio });
+      } catch (e) {
+        if (id && e && e.name === 'OverconstrainedError') return navigator.mediaDevices.getUserMedia({ audio: base });
+        throw e;
+      }
+    };
     let stream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio });
-    } catch (e) {
-      if (deviceId && e && e.name === 'OverconstrainedError') stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
-      else { session('playback'); throw e; }
-    }
+      stream = await get(deviceId || Mic.builtInId || '');
+      // With headphones in, iPhone switches to the headphone mic, which is on your head and
+      // can't hear the piano. If that happened, find the iPhone's own mic and use it instead.
+      if (!deviceId && !BUILT_IN.test(labelOf(stream))) {
+        const own = await findBuiltIn();
+        if (own && own.label !== labelOf(stream)) {
+          stream.getTracks().forEach((t) => t.stop());
+          stream = await get(own.deviceId);
+          if (!isHeadset(labelOf(stream))) Mic.builtInId = own.deviceId;
+        }
+      }
+    } catch (e) { session('playback'); throw e; }
     this.stream = stream;
     const track = stream.getAudioTracks()[0];
-    this.label = (track && track.label) || 'Microphone';
+    this.label = labelOf(stream) || 'Microphone';
+    this.headset = isHeadset(this.label);
     this.settings = track && track.getSettings ? track.getSettings() : {};
     try { if (c.state !== 'running') await c.resume(); } catch (e) { /* the take will show silence */ }
     this.sr = c.sampleRate;
@@ -139,6 +156,21 @@ function join(list) {
   let o = 0;
   list.forEach((a) => { out.set(a, o); o += a.length; });
   return out;
+}
+
+function labelOf(stream) {
+  const t = stream && stream.getAudioTracks()[0];
+  return (t && t.label) || '';
+}
+const HEADSET = /airpods|beats|headset|headphone|earpods|earbuds|bluetooth|hands-free|handsfree|wireless|buds|bose|sony|jabra|skullcandy|jbl|usb|lightning/i;
+const BUILT_IN = /iphone|ipad|built-in|builtin|internal|front|back|bottom/i;
+/* Is this the mic in a pair of headphones? */
+export function isHeadset(label) { return !!label && HEADSET.test(label) && !BUILT_IN.test(label); }
+async function findBuiltIn() {
+  try {
+    const all = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audioinput' && d.deviceId && d.deviceId !== 'default');
+    return all.find((d) => BUILT_IN.test(d.label) && !HEADSET.test(d.label)) || null;
+  } catch (e) { return null; }
 }
 
 /* Lists the mics, once permission has been given (before that, names are blank). */
